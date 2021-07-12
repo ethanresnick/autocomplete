@@ -4,6 +4,7 @@ import {
   AutocompleteComponents,
   getAlgoliaResults,
 } from '@algolia/autocomplete-js';
+import { combine, groupBy, limit, balance } from '@algolia/autocomplete-core';
 import {
   AutocompleteInsightsApi,
   createAlgoliaInsightsPlugin,
@@ -56,73 +57,67 @@ autocomplete<ProductHit>({
   placeholder: 'Search',
   debug: true,
   openOnFocus: true,
-  plugins: [
-    shortcutsPlugin,
-    algoliaInsightsPlugin,
-    recentSearchesPlugin,
-    querySuggestionsPlugin,
-    categoriesPlugin,
-  ],
-  getSources({ query, state }) {
-    if (!query) {
-      return [];
-    }
-
+  getSources({ query }) {
     return [
-      {
-        sourceId: 'products',
-        getItems() {
-          return getAlgoliaResults<ProductRecord>({
-            searchClient,
-            queries: [
-              {
-                indexName: 'instant_search',
-                query,
-                params: {
-                  clickAnalytics: true,
-                  attributesToSnippet: ['name:10', 'description:35'],
-                  snippetEllipsisText: '…',
-                },
-              },
-            ],
-            transformResponse({ hits }) {
-              const [bestBuyHits] = hits;
+      combine(
+        [
+          {
+            sourceId: 'products',
+            getItems() {
+              return getAlgoliaResults<ProductRecord>({
+                searchClient,
+                queries: [
+                  {
+                    indexName: 'instant_search',
+                    query,
+                    params: {
+                      clickAnalytics: true,
+                      attributesToSnippet: ['name:10', 'description:35'],
+                      snippetEllipsisText: '…',
+                      hitsPerPage: 20,
+                    },
+                  },
+                ],
+                transformResponse({ hits }) {
+                  const [bestBuyHits] = hits;
 
-              return bestBuyHits.map((hit) => ({
-                ...hit,
-                comments: hit.popularity % 100,
-                sale: hit.free_shipping,
-                // eslint-disable-next-line @typescript-eslint/camelcase
-                sale_price: hit.free_shipping
-                  ? (hit.price - hit.price / 10).toFixed(2)
-                  : hit.price.toString(),
-              }));
+                  return bestBuyHits.map((hit) => ({
+                    ...hit,
+                    comments: hit.popularity % 100,
+                    sale: hit.free_shipping,
+                    // eslint-disable-next-line @typescript-eslint/camelcase
+                    sale_price: hit.free_shipping
+                      ? (hit.price - hit.price / 10).toFixed(2)
+                      : hit.price.toString(),
+                  }));
+                },
+              });
             },
-          });
-        },
-        templates: {
-          header() {
-            return (
-              <Fragment>
-                <span className="aa-SourceHeaderTitle">Products</span>
-                <div className="aa-SourceHeaderLine" />
-              </Fragment>
-            );
           },
-          item({ item, components }) {
-            return (
-              <ProductItem
-                hit={item}
-                components={components}
-                insights={state.context.algoliaInsightsPlugin.insights}
-              />
-            );
-          },
-          noResults() {
-            return 'No products for this query.';
-          },
-        },
-      },
+        ],
+        [
+          groupBy((item) => item.categories[0], {
+            getSource({ title }) {
+              return {
+                templates: {
+                  header() {
+                    return (
+                      <Fragment>
+                        <span className="aa-SourceHeaderTitle">{title}</span>
+                        <div className="aa-SourceHeaderLine" />
+                      </Fragment>
+                    );
+                  },
+                  item({ item, components }) {
+                    return <ProductItem hit={item} components={components} />;
+                  },
+                },
+              };
+            },
+          }),
+          balance(2),
+        ]
+      ),
     ];
   },
 });
@@ -133,7 +128,7 @@ type ProductItemProps = {
   components: AutocompleteComponents;
 };
 
-function ProductItem({ hit, insights, components }: ProductItemProps) {
+function ProductItem({ hit, components }: ProductItemProps) {
   return (
     <a href={hit.url} className="aa-ItemLink">
       <div className="aa-ItemContent">
@@ -297,13 +292,6 @@ function ProductItem({ hit, insights, components }: ProductItemProps) {
           onClick={(event) => {
             event.preventDefault();
             event.stopPropagation();
-
-            insights.convertedObjectIDsAfterSearch({
-              eventName: 'Added to cart',
-              index: hit.__autocomplete_indexName,
-              objectIDs: [hit.objectID],
-              queryID: hit.__autocomplete_queryID,
-            });
           }}
         >
           <svg viewBox="0 0 24 24" fill="currentColor">

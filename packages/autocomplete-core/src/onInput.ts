@@ -1,3 +1,4 @@
+import { isCombineDescription, runCombine } from './combine';
 import { preResolve, resolve, postResolve } from './resolve';
 import {
   AutocompleteScopeApi,
@@ -78,8 +79,13 @@ export function onInput<TItem extends BaseItem>({
       state: store.getState(),
       ...setters,
     })
-    .then((sources) => {
+    .then((rawSources) => {
       setStatus('loading');
+
+      // @TODO: detect combine source among others
+      const sources = isCombineDescription(rawSources[0])
+        ? rawSources[0].args[0]
+        : rawSources;
 
       return Promise.all(
         sources.map((source) => {
@@ -97,6 +103,11 @@ export function onInput<TItem extends BaseItem>({
       )
         .then(resolve)
         .then((responses) => postResolve(responses, sources))
+        .then((collections) =>
+          isCombineDescription(rawSources[0])
+            ? runCombine(collections, rawSources[0].args[1])
+            : collections
+        )
         .then((collections) => {
           setStatus('idle');
           setCollections(collections as any);

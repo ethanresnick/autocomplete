@@ -1,4 +1,5 @@
 import { invariant } from '@algolia/autocomplete-shared';
+import { isCombineDescription } from '../combine';
 
 import {
   AutocompleteSource,
@@ -34,6 +35,11 @@ export function getNormalizedSources<TItem extends BaseItem>(
           Boolean(maybeSource)
         )
         .map((source) => {
+          if (isCombineDescription(source)) {
+            // @TODO: default combine sources elsewhere
+            return source;
+          }
+
           invariant(
             typeof source.sourceId === 'string',
             'A source must provide a `sourceId` string.'
